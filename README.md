@@ -6,7 +6,13 @@ MyScripts
 
 	Scripts utilitarios que sao usados como programas no shell
 
+Como instalar
+----------------------------------------------------------------------------------------
+	Baixa o projeto, entre na pasta descompactada e execute:
+	sh _make.sh
 
+
+Comandos a serem instalados
 ----------------------------------------------------------------------------------------
 
 	depcheck.sh -> depcheck
@@ -44,5 +50,10 @@ MyScripts
 
 	sh-to-base64run.sh -> sh-to-base64run
 			Converter shell-script em script obfuscado e codificado
-
+			Requer que o SHC esteja instalado (https://github.com/neurobin/shc)
+			Forma de usar:
+			sh-to-base64run -f (input-script) -o (output-script) -R (relative-root-path)
+			
+			Exemplo:
+			sh-to-base64run -f /root/meuscript.sh -o /root/meuscript-codificado.sh -R /
 
