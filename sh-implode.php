@@ -16,6 +16,7 @@
 	// - remover comentarios?
 	$clean = 0;
 
+	$debug = 0;
 
 // Funcoes
 	function _abort($error, $errno=1){
@@ -41,6 +42,13 @@
 		if($arg=='-h' || $arg == '-help' || $arg == '--help') _help();
 
 		$next = isset($argv[$k+1]) ? $argv[$k+1] : '';
+
+		// ativar debug
+		if($arg=='-d'||$arg=='-debug'||$arg=='--debug'){
+			$debug++;
+			unset($argv[$k]);
+			continue;
+		}
 
 		// Arquivo de entrada
 		if($arg=='-f' && $next != ''){
@@ -85,10 +93,12 @@
 	$OUTPUT_SCRIPT = _clspath($OUTPUT_SCRIPT);
 
 // Debug
-	// echo "SCRIPT.....: [$INPUT_SCRIPT]\n";
-	// echo "OUT FILE...: [$OUTPUT_SCRIPT]\n";
-	// echo "ROOT.......: [$root]\n";
-	// exit();
+	if($debug){
+		echo "SCRIPT.....: [$INPUT_SCRIPT]\n";
+		echo "OUT FILE...: [$OUTPUT_SCRIPT]\n";
+		echo "ROOT.......: [$root]\n";
+		// exit();
+	}
 
 // Criticas
 	if($INPUT_SCRIPT==''){ _abort("Arquivo [$INPUT_SCRIPT] nao informado.", 10); }
@@ -100,31 +110,32 @@
 // Remover $root do inicio para considerar caminho 100% relativo
 	function _no_root($in_shfile){
 		global $root;
+		global $debug;
 		$shfile = $in_shfile;
 		$rlen = strlen($root);
 
 		if($root != '/' && substr($shfile, 0, $rlen) == $root) $shfile = substr($shfile, $rlen);
 		$shfile = str_replace('//', '/', $shfile);
 
-		/*
-		echo "\n";
-		echo "_no_root($shfile)\n";
-		echo "           shfile....: [$in_shfile]\n";
-		echo "           compsubstr: [".substr($in_shfile, 0, strlen($root))."]\n";
-		echo "                 rlen: [".$rlen."]\n";
-		echo "       out-shfile....: [$shfile]\n";
-		echo "\n\n";
-		*/
-
+		if($debug){
+			echo "\n";
+			echo "_no_root($shfile)\n";
+			echo "           shfile....: [$in_shfile]\n";
+			echo "           compsubstr: [".substr($in_shfile, 0, strlen($root))."]\n";
+			echo "                 rlen: [".$rlen."]\n";
+			echo "       out-shfile....: [$shfile]\n";
+			echo "\n";
+		}
 		return $shfile;
 	}
 // Adicionar root para obter caminho completo para acessar o arquivo
 	function _full_file($in_shfile){
 		global $root;
+		global $debug;
 		$shfile = $in_shfile;
 		if($root=='/') return $shfile;
 		$shfile = $root . _no_root($shfile);
-		//echo "FULL_FILE: in[$in_shfile] root[$root] out[$shfile]\n";
+		if($debug) echo "_full_file($in_shfile) root[$root] out[$shfile]\n";
 		return $shfile;
 	}
 
@@ -133,6 +144,7 @@
 	function _sh_implode($in_shfile, $curpwd){
 		global $includes;
 		global $reclevel;
+		global $debug;
 
 		// Obter caminho completo para o script
 		$shfile = _full_file($in_shfile);
@@ -148,10 +160,14 @@
 
 		$linenum = 0;
 
-		//- echo "script name......: [$sfqdn]\n";
-		//- echo "file name........: [$fname]\n";
-		//- echo "dir name.........: [$dname]\n";
-		//- echo "cur pwd..........: [$curpwd]\n";
+		if($debug){
+			echo "_sh_implode($in_shfile, $curpwd)\n";
+			echo "\tscript name......: [$sfqdn]\n";
+			echo "\tfile name........: [$fname]\n";
+			echo "\tdir name.........: [$dname]\n";
+			echo "\tcur pwd..........: [$curpwd]\n";
+			echo "\n";
+		}
 
 		// entrar no diretorio para procurar includes relativas
 		if(is_dir($dname)) @chdir($dname);
@@ -189,8 +205,10 @@
 
 				$ifile = _full_file($inc_file);
 
-				//- echo "[$fname] Include detectado na linha [$linenum] [$sline]\n";
-				//- echo "[$fname] Include file: [$ifile]\n";
+				if($debug){
+					echo "\t\t[$fname] Include detectado na linha [$linenum] [$sline]\n";
+					echo "\t\t[$fname] Include file: [$ifile]\n";
+				}
 
 				// Arquivo existe?
 				if(is_file($ifile)){
@@ -217,7 +235,13 @@
 // --
 // Obter arquivo implodido
 	$rscript = _no_root($INPUT_SCRIPT);
-	// echo "\n"; echo "Script: [$INPUT_SCRIPT] R-Script: [$rscript]\n"; echo "\n"; exit();
+	if($debug){
+		echo "\n";
+		echo "Script: [$INPUT_SCRIPT] R-Script: [$rscript]\n";
+		echo "\n";
+		// exit();
+	}
+
 	$newscript = _sh_implode($rscript, '');
 
 // Trocar constantes de compilacao
@@ -233,6 +257,13 @@
 	);
 	foreach($consts as $cname=>$cvalue) $newscript = str_replace($cname, $cvalue, $newscript);
 
+	if($debug > 1){
+		echo "OUT SCRIPT.: [$OUTPUT_SCRIPT]\n";
+		echo "-------------------------------------------------------------\n";
+		echo $newscript;
+		echo "-------------------------------------------------------------\n";
+	}
+
 // Gravar em arquivo ou jogar na saida?
 	if($OUTPUT_SCRIPT==''){
 		// Saida
@@ -244,19 +275,5 @@
 		chdir($startpwd);
 		file_put_contents($OUTPUT_SCRIPT, $newscript);
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ?>
