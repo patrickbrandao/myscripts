@@ -86,10 +86,7 @@ export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
 	_cls_tmp(){ [ "x$gtmplist" = "x" ] && return; for xtmp in $gtmplist; do rm -f "$xtmp" 2>/dev/null; done; }
 
 	# finalizar programa (e limpar ambiente)
-	_end(){
-		_cls_tmp
-		exit $1
-	}
+	_end(){ errno="$1"; [ "x$errno" = "x" ] && errno=99; _cls_tmp; exit $errno; }
 
 	# Erro fatal
 	_abort(){ echo; _echo_lighred_n "Abortado: "; _echo_lighyellow "$1"; echo; _end $2; }
