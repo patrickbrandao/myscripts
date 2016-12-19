@@ -208,9 +208,8 @@ export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
 	[ "$sn" = "0" ] || _abort "Erro $sn ao gerar base64"
 	# Gerar assinatura base64 (evitar corrupcao do base64 durante download)
 	tmp64md5=$(_get_md5 "$tmp64")
-	_echo_lighgreen_n "tmp64...................: "; _echo_lighyellow "$tmp64"
-	_echo_lighgreen_n "tmp64md5................: "; _echo_lighyellow "$tmp64md5"
-
+	#- _echo_lighgreen_n "tmp64...................: "; _echo_lighyellow "$tmp64"
+	#- _echo_lighgreen_n "tmp64md5................: "; _echo_lighyellow "$tmp64md5"
 
 # 2 - prototipar script final
 	_new_tmp; tmpscript="$tmpfile"
