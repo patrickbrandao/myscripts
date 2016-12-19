@@ -151,7 +151,7 @@ export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
 
 # Criticar
 	[ "x$SOURCE_FILE" = "x" ] && _abort "Informe o arquivo de entrada."
-	[ -f "$SOURCE_FILE" ] || _abort "Arquivo de entrada nao existe."
+	[ -f "$SOURCE_FILE" ] || _abort "Arquivo de entrada nao existe [$SOURCE_FILE]."
 	if [ "x$OUTPUT_SCRIPT" != "x" ]; then
 		# tentar criar arquivo
 		touch "$OUTPUT_SCRIPT" || _abort "Erro ao criar arquivo de saida [$OUTPUT_SCRIPT]"
