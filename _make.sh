@@ -54,6 +54,7 @@
 	_install sh-implode.php					/usr/bin/sh-implode
 	_install sh-to-base64run.sh 			/usr/bin/sh-to-base64run
 	_install php-serialize-print.php		/usr/bin/php-serialize-print
+	_install php-implode.php				/usr/bin/php-implode
 	_install dupfiles.php					/usr/bin/dupfiles
 
 	_install charset-find.sh				/usr/bin/charset-find
