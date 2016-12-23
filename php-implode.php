@@ -183,7 +183,7 @@
 	$PHPIZE_HTML = 0;
 
 	// Nao implodir inclusoes via require()
-	$IMPLODE_REQUIRE = 0;
+	$IMPLODE_REQUIRE = 1;
 
 	$debug = 0;
 
@@ -316,10 +316,10 @@
 		if($debug){
 			echo "\n";
 			echo "_no_root($phpfile)\n";
-			echo "           shfile....: [$in_phpfile]\n";
-			echo "           compsubstr: [".substr($in_phpfile, 0, strlen($root))."]\n";
-			echo "                 rlen: [".$rlen."]\n";
-			echo "       out-shfile....: [$phpfile]\n";
+			echo "       PHP-input-file......: [$in_phpfile]\n";
+			echo "           compsubstr......: [".substr($in_phpfile, 0, strlen($root))."]\n";
+			echo "                 rlen......: [".$rlen."]\n";
+			echo "       out-PHP-file........: [$phpfile]\n";
 			echo "\n";
 		}
 		return $phpfile;
