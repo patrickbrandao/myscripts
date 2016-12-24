@@ -1,8 +1,15 @@
 #!/usr/bin/php -q
 <?php
 
+	// Versao do software
+	// Usado como cache de cache
+	$PHPI_VERSION = '161224-0036';
+
 	// funcoes para transformar codigo PHP em tokens
 	// DEFINICAO DE TOKENS NAO RECONHECIDOS
+
+	// Lista de arquivos incluidos
+	$PHPI_INCLUDES = array();
 
 	// IDs e CONTANTES
 	$phpt_token_list = array(
@@ -54,6 +61,7 @@
 		9030 => 'T_BIT_OP_AND',
 		9031 => 'T_BIT_OP_OR',
 		9032 => 'T_CLASS_MEMBER',
+		9033 => 'T_X_SPACESHIP',
 		9998 => 'T_SEP_ECHO',
 		9999 => 'T_EXPLICIT'
 	);
@@ -85,7 +93,8 @@
 		9028 => '@',
 		9029 => '/',
 		9030 => '~',
-		9031 => '|'
+		9031 => '|',
+		9033 => '<=>'
 	);
 	foreach($phpt_token_list as $t_id=>$t_name) define($t_name,  $t_id);
 
@@ -99,6 +108,7 @@
 	// tokens especiais
 	define('TOKEN_INLINE_LIST', 189000); // o token é uma lista de tokens
 	define('T_HTML_TO_PHP', 189001); // o token é um html convertido em: echo base64_decode('xxxx');
+	define('T_CACHE_TAIL', 189002); // token vazio, sinalizador de tokens obtidos no cache
 
 	// sinalizacoes
 	define('TOKEN_PREV', 3);
@@ -122,6 +132,92 @@
 		return $tid;
 	}
 
+	// Limpar tokens desnecessarios
+	function _php_clean(&$tokens){
+		// array com lista de elementos que nao precisam
+		// ter outros espacos antes ou depois
+		$no_whitespace_borders = array(
+			T_WHITESPACE,
+			T_EQUAL, T_VARIABLE,
+			T_IF, T_WHILE, T_SEPARATOR,
+			T_IS_EQUAL, T_IS_GREATER_OR_EQUAL, T_IS_IDENTICAL, T_IS_NOT_EQUAL,
+			T_IS_NOT_IDENTICAL, T_IS_SMALLER_OR_EQUAL, T_X_SPACESHIP, T_XOR_EQUAL,
+			T_OBJECT_OPERATOR, T_NS_SEPARATOR, T_MUL_EQUAL, T_MOD_EQUAL, T_MINUS_EQUAL, 
+			T_DIV_EQUAL, T_CONCAT_EQUAL, T_BOOLEAN_OR, T_BOOLEAN_AND, T_AND_EQUAL, 
+			T_INC, T_DEC, 
+			T_CONSTANT_ENCAPSED_STRING,
+			T_FOR, T_FOREACH, T_ENCAPSED_AND_WHITESPACE, T_DOUBLE_ARROW,
+			T_OR_EQUAL, T_PAAMAYIM_NEKUDOTAYIM, T_PLUS_EQUAL, T_POW, T_POW_EQUAL,
+			T_SL, T_SL_EQUAL, T_SR, T_SR_EQUAL, T_START_HEREDOC,
+			T_STRING_CAST, T_SWITCH, T_THROW, T_TRY,
+			T_VIRG, T_DOUBLE_DOT,
+			T_OPEN_PARAM, T_CLOSE_PARAM,
+			T_OPEN_BLOCK, T_CLOSE_BLOCK,
+			T_HTML_TO_PHP,
+			T_ECOM
+		);
+		for($job=0; $job < 3; $job++){
+			foreach($tokens as $k=>$token){
+				if(!isset($tokens[$k])) continue;
+				// token atual
+				$act_token = $tokens[$k][TOKEN_CODE]; // codigo do token atual
+				$act_id = $k;
+				// proximo token +1
+				$nxt_token = 0;
+				$nxt_id = -1;
+				for($i=1; $i < 3; $i++)
+					if(isset($tokens[$k+$i])){ $nxt_token = $tokens[$k+$i][TOKEN_CODE]; $nxt_id = $k+$i; break; }
+				//-
+				// primeiro token e' espaco, ciao
+				if($act_token===T_WHITESPACE && $k === 0){ unset($tokens[$k]); continue; }
+				// XXXX + espaco = XXXX
+				if(in_array($act_token, $no_whitespace_borders) && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
+				// espaco + XXXX = XXXX
+				if($act_token===T_WHITESPACE && in_array($nxt_token, $no_whitespace_borders)){ unset($tokens[$k]); continue; }
+			}
+			// serializar
+			$ntokens = array(); $c = 0;
+			foreach($tokens as $k=>$token) $ntokens[$c++] = $token;
+			$tokens = $ntokens; unset($ntokens);
+		}
+	}
+
+	// converter HTML em tokens PHP
+	function _php_convert_html(&$tokens){
+		$c = 0;
+		foreach($tokens as $k=>$token){
+			if(!isset($tokens[$k])) continue;
+			$c++;
+			// codigo do token atual
+			$act_token = $tokens[$k][TOKEN_CODE]; $act_id = $k;
+			// ignorar token nao-HTML
+			if($act_token!=T_INLINE_HTML) continue;
+			// proximo token
+			$nxt_token = 0; $nxt_id = -1;
+			if(isset($tokens[$k+1])){ $nxt_id = $k+1; $nxt_token = $tokens[$nxt_id][TOKEN_CODE]; }
+			// primeiro token HTML pode ser na verdade
+			// o comando do interpretador, #!/....
+			if($c===1){
+				$xstr = trim($tokens[$act_id][TOKEN_CONTENT]);
+				// token do interpretador, ignorar conversao
+				if(substr($xstr, 0, 3) == '#!/') continue;
+			}
+			// pode acontecer de a limpeza retirar espacos entre dois
+			// tokens HTML, converter tokens HTML seguidos em um unico
+			// token concatenado
+			if($act_token===T_INLINE_HTML && $nxt_token===T_INLINE_HTML){
+				// concatenar tokens
+				$tokens[$act_id][TOKEN_CONTENT] = $tokens[$act_id][TOKEN_CONTENT] . $tokens[$nxt_id][TOKEN_CONTENT];
+				// remover proximo token
+				unset($tokens[$nxt_id]); $nxt_id = -1;
+			}
+			// transformar token HTML em token especial concatenado
+			$tokens[$act_id][TOKEN_CODE] = T_HTML_TO_PHP;
+			$tokens[$act_id][TOKEN_NAME] = 'T_HTML_TO_PHP';
+			$tokens[$act_id][TOKEN_CONTENT] = "echo base64_decode('".base64_encode($tokens[$act_id][TOKEN_CONTENT])."');";
+		}
+	}
+
 	// executar tokenizer completo
 	/*
 	Array de tokens:
@@ -138,10 +234,9 @@
 	// iremos usar a vizinhanca com o token T_INLINE_HTML
 	// para reinserir esses tokens apos implodir codigos
 	// cujo inicio e fim sao desconhecidos (seja php abertura ou fechamento, ou html)
-	function php_tokenizer($source){
+	function php_tokenizer($source, $phpfile){
 		global $phpt_token_sets;
 		$tokens = token_get_all($source);
-
 		// 1 - identificar partes brutas nao reconhecidas
 		$lastlinenum = 0;
 		foreach($tokens as $k=>$part){
@@ -153,196 +248,85 @@
 				}
 				// preencher o nome do token
 				$tokens[$k][TOKEN_NAME] = php_token($tokens[$k][TOKEN_CODE]);
+				$tokens[$k][TOKEN_FQDN] = $phpfile;
 				$lastlinenum = $tokens[$k][TOKEN_LINE];
 			}else{
 				// identicar token
 				$tid = php_strcode($part);
-				$tokens[$k] = array(TOKEN_CODE => $tid, TOKEN_CONTENT => $part, TOKEN_LINE => $lastlinenum, TOKEN_NAME => php_token($tid) );
+				$tokens[$k] = array(
+					TOKEN_CODE => $tid,
+					TOKEN_CONTENT => $part,
+					TOKEN_LINE => $lastlinenum,
+					TOKEN_NAME => php_token($tid),
+					TOKEN_FQDN => $phpfile
+				);
 			}
-
 		}
 		return $tokens;
 	}
 
-// Variaveis
-	// Script de entrada
-	$INPUT_SCRIPT = '';
-
-	// Arquivo para gravar script de saida
-	$startpwd = getcwd();
-	$OUTPUT_SCRIPT = '';
-
-	// Root relativo (procurar dentro de uma pasta em vez de ir no /)
-	$root = '/';
-
-	// Flags
-	// - remover comentarios?
-	$PHPCLEAN = 0;
-
-	// Converter HTML em tokens PHP
-	$PHPIZE_HTML = 0;
-
-	// Nao implodir inclusoes via require()
-	$IMPLODE_REQUIRE = 1;
-
-	$debug = 0;
-
-// Funcoes
-	function _abort($error, $errno=1){
-		global $INPUT_SCRIPT ;
-		echo "\n";
-		echo "PHP-IMPLODE [", $INPUT_SCRIPT, "] ERROR: ", $error, "\n";
-		echo "\n";
-		exit($errno);
-	}
-
-	function _help(){
-		echo "\n";
-		echo "Use: php-implode -f (php-script) -w (output-script) [-r relative-chroot] [options]\n";
-		echo "Options:\n";
-		echo "\t-c        Limpar codigo\n";
-		echo "\t-d        Ativar debug\n";
-		echo "\t-x        Transformar partes HTML em tokens PHP\n";
-		echo "\t-M        Nao resumir require()\n";
-		echo "\n";
-		exit(0);
-	}
-
-	// processar argumento
-	if(isset($argv[0])) unset($argv[0]); // remover argumento zero
-	foreach($argv as $k=>$arg){
-		if(!isset($argv[$k])) continue;
-
-		if($arg=='-h' || $arg == '-help' || $arg == '--help') _help();
-
-		$next = isset($argv[$k+1]) ? $argv[$k+1] : '';
-
-		// ativar debug
-		if($arg=='-d'||$arg=='-debug'||$arg=='--debug'){
-			$debug++;
-			unset($argv[$k]);
-			continue;
+	// tokenizar arquivo
+	function php_tokenizer_file($phpfile){
+		global $CACHE_ENABLE;
+		global $CACHEDIR;
+		global $CACHEPREFIX;
+		global $ENABLE_DEBUG;
+		global $PHPSTRIPCLEAN;
+		global $IMPLODE_REQUIRE;
+		global $PHPIZE_HTML;
+		// Obter caminho completo para o script
+		if(!is_file($phpfile)) return array();
+		// Consultar cache
+		$cachetokfile = ''; $cachemd5file = ''; $md5file = ''; $incache = 0;
+		// construir cache de cache com opcoes
+		// $cachekey =  ($PHPSTRIPCLEAN?'strip':'no-strip') .  ($PHPIZE_HTML?'html2php':'html2php') .  ($IMPLODE_REQUIRE?'reqimplode':'no-reqimplode');
+		if($CACHE_ENABLE){
+			$cachetokfile = $CACHEDIR . '/' . $CACHEPREFIX . '-' . str_replace('/', '-', $phpfile) . '.phpi';
+			$cachemd5file = $CACHEDIR . '/' . $CACHEPREFIX . '-' . str_replace('/', '-', $phpfile) . '.md5';
+			if(is_file($cachetokfile) && is_file($cachemd5file)){
+				$md5cache = trim(file_get_contents($cachemd5file));
+				$md5file = md5_file($phpfile);
+				if($md5cache === $md5file)
+					// esta em cache, retornar tokens pre-compilados
+					return unserialize(file_get_contents($cachetokfile));
+				//-
+			} // else - nao estava no cache
+		} // else - cache desativado
+		// obter codigo fonte do arquivo
+		if($PHPSTRIPCLEAN){
+			$source_code = php_strip_whitespace($phpfile);
+		}else{
+		 	$source_code = file_get_contents($phpfile);
 		}
-
-		// Arquivo de entrada
-		if( ($arg=='-f' || $arg=='-input' || $arg=='--input' || $arg=='-file' || $arg=='--file') && $next != ''){
-			$INPUT_SCRIPT = $next;
-			unset($argv[$k]); unset($argv[$k+1]);
-			continue;
+		// limpeza preliminar do codigo fonte
+		// converter fonte em tokens PHP
+		$tokens = php_tokenizer($source_code, $phpfile);
+		// converter tokens HTML em PHP
+		if($PHPIZE_HTML) _php_convert_html($tokens);
+		// proceder com limpezas locais
+		_php_clean($tokens);
+		// salvar em cache
+		if($CACHE_ENABLE){
+			// token sinalizador de cache
+			$tokens[] = array( TOKEN_CODE => T_CACHE_TAIL, TOKEN_CONTENT => '', TOKEN_LINE => @time(), TOKEN_NAME => 'T_CACHE_TAIL', TOKEN_FQDN => $phpfile );
+			// obter assinatura atual do arquivo fonte
+			if($md5file=='') $md5file = md5_file($phpfile);
+			// gravar md5 no arquivo de assinatura do cache
+			file_put_contents($cachemd5file, $md5file);
+			// gravar cache
+			file_put_contents($cachetokfile, serialize($tokens));
 		}
-
-		// HTML para php
-		if($arg=='-x' || $arg=='-phpize' || $arg=='--phpize'){
-			$PHPIZE_HTML++;
-			unset($argv[$k]);
-			continue;
-		}
-
-		// Arquivo de saida
-		if( ($arg=='-w' || $arg=='-output' || $arg=='--output') && $next != ''){
-			$OUTPUT_SCRIPT = $next;
-			unset($argv[$k]); unset($argv[$k+1]);
-			continue;
-		}
-
-		// Nao implodir require()
-		if( $arg=='-M' || $arg=='-no-require' || $arg=='--no-require'){
-			$IMPLODE_REQUIRE = 0;
-			unset($argv[$k]);
-			continue;
-		}
-
-
-		// Root relativo
-		if( ($arg=='-r' || $arg=='-root' || $arg=='--root' ) && $next != ''){
-			$root = $next;
-			unset($argv[$k]); unset($argv[$k+1]);
-			continue;
-		}
-
-		// Flags
-		if($arg == '-c' || $arg == '-clean' || $arg == '-clear' || $arg == '--clean' || $arg == '--clear'){
-			$PHPCLEAN++;
-			continue;
-		}
-
-		// Argumento desconhecido:
-		// 1 - se for arquivo existente, e' nosso script
-		if($INPUT_SCRIPT =='' && is_file($arg)){ $INPUT_SCRIPT = $arg; continue; }
-		if($OUTPUT_SCRIPT==''){ $OUTPUT_SCRIPT = $arg; continue; }
-	}
-	if($root=='') $root = '/';
-
-	// retirar /./, ./., //
-	function _clspath($str){
-		for($i=0; $i < 10; $i++){
-			$str = str_replace('//', '/', $str);
-			$str = str_replace('/./', '/', $str);
-		}
-		return $str;
-	}
-	$INPUT_SCRIPT = _clspath($INPUT_SCRIPT);
-	$OUTPUT_SCRIPT = _clspath($OUTPUT_SCRIPT);
-
-// Debug
-	if($debug){
-		echo "START PWD........: [$startpwd]\n";
-		echo "SCRIPT...........: [$INPUT_SCRIPT]\n";
-		echo "OUT FILE.........: [$OUTPUT_SCRIPT]\n";
-		echo "CLEAN............: [$PHPCLEAN]\n";
-		echo "PHPIZE HTML......: [$PHPIZE_HTML]\n";
-		echo "IMPLODE_REQUIRE..: [$IMPLODE_REQUIRE]\n";
-		echo "ROOT.........: [$root]\n";
-		// exit();
-	}
-
-// Criticas
-	if($INPUT_SCRIPT==''){ _abort("Arquivo [$INPUT_SCRIPT] nao informado.", 10); }
-	if(!file_exists($INPUT_SCRIPT)){ _abort("Arquivo [$INPUT_SCRIPT] nao encontrado.", 11); }
-
-// Lista de arquivos incluidos
-	$includes = array();
-
-// Remover $root do inicio para considerar caminho 100% relativo
-	function _no_root($in_phpfile){
-		global $root;
-		global $debug;
-		$phpfile = $in_phpfile;
-		$rlen = strlen($root);
-
-		if($root != '/' && substr($phpfile, 0, $rlen) == $root) $phpfile = substr($phpfile, $rlen);
-		$phpfile = str_replace('//', '/', $phpfile);
-
-		if($debug){
-			echo "\n";
-			echo "_no_root($phpfile)\n";
-			echo "       PHP-input-file......: [$in_phpfile]\n";
-			echo "           compsubstr......: [".substr($in_phpfile, 0, strlen($root))."]\n";
-			echo "                 rlen......: [".$rlen."]\n";
-			echo "       out-PHP-file........: [$phpfile]\n";
-			echo "\n";
-		}
-		return $phpfile;
-	}
-// Adicionar root para obter caminho completo para acessar o arquivo
-	function _full_file($in_phpfile){
-		global $root;
-		global $debug;
-		$phpfile = $in_phpfile;
-		if($root=='/') return $phpfile;
-		$phpfile = $root . _no_root($phpfile);
-		if($debug) echo "_full_file($in_phpfile) root[$root] out[$phpfile]\n";
-		return $phpfile;
+		// retorno
+		return $tokens;
 	}
 
 // Funcao para implodir script
 	// Retorna array de tokens do script e todas as suas inclusoes via REQUIRE
 	$reclevel = 0;
 	function _php_implode($in_phpfile, $curpwd){
-		global $includes;
+		global $PHPI_INCLUDES;
 		global $reclevel;
-		global $debug;
-		global $PHPCLEAN;
+		global $ENABLE_DEBUG;
 		global $IMPLODE_REQUIRE;
 
 		// Obter caminho completo para o script
@@ -359,7 +343,7 @@
 
 		$linenum = 0;
 
-		if($debug){
+		if($ENABLE_DEBUG){
 			echo "_php_implode($in_phpfile, $curpwd)\n";
 			echo "\tscript name......: [$sfqdn]\n";
 			echo "\tfile name........: [$fname]\n";
@@ -371,33 +355,21 @@
 		// entrar no diretorio para procurar includes relativas
 		if(is_dir($dname)) @chdir($dname);
 
-		$includes[$sfqdn] = isset($includes[$sfqdn]) ? $includes[$sfqdn]+1 : 1;
-		if($includes[$sfqdn] > 2){
-			//- echo "-> Erro, inclusoes em loop do arquivo [$sfqdn]\n";
+		$PHPI_INCLUDES[$sfqdn] = isset($PHPI_INCLUDES[$sfqdn]) ? $PHPI_INCLUDES[$sfqdn]+1 : 1;
+		if($PHPI_INCLUDES[$sfqdn] > 2){
+			if($ENABLE_DEBUG) echo "-> Erro, inclusoes em loop do arquivo [$sfqdn]\n";
 			exit(4);
 		}
 
-		// limpeza do codigo fonte
-		if($PHPCLEAN){
-			$source_code = php_strip_whitespace($phpfile);
-		}else{
-		 	$source_code = file_get_contents($phpfile);
-		}
-		// echo $content;
-		// echo "LIMPANDO [$phpfile]\n";
-		// exit();
-
 		// converter fonte em tokens PHP
-		$tokens = php_tokenizer($source_code);
-		foreach($tokens as $k=>$v) $tokens[$k][TOKEN_FQDN] = $phpfile;
+		$tokens = php_tokenizer_file($phpfile);
+		
+		// se nao houver implosao de require, nao precisamos processar
+		// tokens, basta retornar-los
+		if(!$IMPLODE_REQUIRE) return $tokens;
 
 		// limpar tipos whitespace afrente do require e antes do ';' posterior
 		// - falta fazer, vai bugar se o programador deixar espaco apos o parenteses
-
-		// codigo fonte do arquivo alvo deve ter o codigo de abertura e fechamento
-		// removido
-		// echo "RECLEVEL: $reclevel\n";
-		// if($reclevel){ print_r($tokens); exit(); }
 
 		// percorrer tokens a busca de require
 		$skip_tid = -1;
@@ -409,77 +381,116 @@
 
 			// procurar sequencia:
 			// T_REQUIRE + T_OPEN_PARAM + T_CONSTANT_ENCAPSED_STRING + T_CLOSE_PARAM
-			if($IMPLODE_REQUIRE === 1)
-			if(
-				$tokens[$tid][0] === T_REQUIRE &&
-				$tokens[$tid+1][0] === T_OPEN_PARAM &&
-				$tokens[$tid+2][0] === T_CONSTANT_ENCAPSED_STRING &&
-				$tokens[$tid+3][0] === T_CLOSE_PARAM &&
-				$tokens[$tid+4][0] === T_SEPARATOR
-			){
-				// achou require
+			if($IMPLODE_REQUIRE === 1){
+				if(
+					$tokens[$tid][0] === T_REQUIRE &&
+					$tokens[$tid+1][0] === T_OPEN_PARAM &&
+					$tokens[$tid+2][0] === T_CONSTANT_ENCAPSED_STRING &&
+					$tokens[$tid+3][0] === T_CLOSE_PARAM &&
+					$tokens[$tid+4][0] === T_SEPARATOR
+				){
+					// achou require
 
-				// pular tokens na analise posterior
-				$skip_tid = $tid + 4;
+					// pular tokens na analise posterior
+					$skip_tid = $tid + 4;
 
-				// verificar se o alvo existe
-				$inc_file = trim($tokens[$tid+2][1], " '\n\t\r".'"');
+					// verificar se o alvo existe
+					$inc_file = trim($tokens[$tid+2][1], " '\n\t\r".'"');
 
-				// ingnorar includes com variaveis, elas nao podem
-				// ser implodicas e funcionam se existirem em php-script
-				// (PERIGO DE BUG se o alvo estiver criptografado tambem)
-				if(strpos($inc_file, '$')!==false) continue;
+					// ingnorar includes com variaveis, elas nao podem
+					// ser implodicas e funcionam se existirem em php-script
+					// (PERIGO DE BUG se o alvo estiver criptografado tambem)
+					if(strpos($inc_file, '$')!==false) continue;
 
-				// obter caminho completo do fonte
-				$ifile = _full_file($inc_file);
-				if(!is_file($ifile) && is_file($inc_file)) $ifile = $inc_file;
+					// obter caminho completo do fonte
+					$ifile = _full_file($inc_file);
+					if(!is_file($ifile) && is_file($inc_file)) $ifile = $inc_file;
 
-				if($debug){
-					echo "\t\t[$fname] Include detectado: [$inc_file]\n";
-					echo "\t\t[$fname] Include file.....: [$ifile]\n";
-					echo "\t\t\t",$tokens[$tid][1],"\n";
-					echo "\t\t\t",$tokens[$tid+1][1],"\n";
-					echo "\t\t\t",$tokens[$tid+2][1],"\n";
-					echo "\t\t\t",$tokens[$tid+3][1],"\n";
-					echo "\t\t\t",$tokens[$tid+4][1],"\n";
-				}
-
-				// Arquivo existe?
-				if(is_file($ifile)){
-					// substituir essa linha pelo script de destino pre-compilado
-					$reclevel++;
-					$src = _php_implode($ifile, $curpwd);
-					$reclevel--;
-					if($debug){
-						echo "\n\t****** Fonte importado de [$ifile]\n";
-						//print_r($src);
+					if($ENABLE_DEBUG){
+						echo "\t\t[$fname] REQUIRE detectado: [$inc_file]\n";
+						echo "\t\t[$fname] REQUIRE file.....: [$ifile]\n";
+						echo "\t\t\t",$tokens[$tid][1],"\n";
+						echo "\t\t\t",$tokens[$tid+1][1],"\n";
+						echo "\t\t\t",$tokens[$tid+2][1],"\n";
+						echo "\t\t\t",$tokens[$tid+3][1],"\n";
+						echo "\t\t\t",$tokens[$tid+4][1],"\n";
 					}
 
-					// jogar lista de tokens dentro do token atual,
-					// _php_resume_inline_tokens vai resolver isso depois
-					$tokens[$tid] = array(
-						TOKEN_CODE => TOKEN_INLINE_LIST,
-						TOKEN_CONTENT => $src,
-						TOKEN_LINE => -1,
-						TOKEN_NAME => 'TOKEN_INLINE_LIST',
-						TOKEN_FQDN => $ifile
-					);
+					// Arquivo existe?
+					if(is_file($ifile)){
+						// substituir essa linha pelo script de destino pre-compilado
+						$reclevel++;
+						$src = _php_implode($ifile, $curpwd);
+						$reclevel--;
+						if($ENABLE_DEBUG){
+							echo "\n\t****** Fonte importado de [$ifile]\n";
+							//print_r($src);
+						}
 
-					// eliminar tokens do require
-					unset($tokens[$tid+1]);
-					unset($tokens[$tid+2]);
-					unset($tokens[$tid+3]);
-					unset($tokens[$tid+4]);
+						// jogar lista de tokens dentro do token atual,
+						// _php_resume_inline_tokens vai resolver isso depois
+						$tokens[$tid] = array(
+							TOKEN_CODE => TOKEN_INLINE_LIST,
+							TOKEN_CONTENT => $src,
+							TOKEN_LINE => -1,
+							TOKEN_NAME => 'TOKEN_INLINE_LIST',
+							TOKEN_FQDN => $ifile
+						);
 
-				}else{
-					// $content[$k] = "# Include impossivel, arquivo nao existe: ".$ifile."\n";
-					_abort("Include impossivel, arquivo nao existe: ".$ifile, 9);
+						// eliminar tokens do require
+						unset($tokens[$tid+1]);
+						unset($tokens[$tid+2]);
+						unset($tokens[$tid+3]);
+						unset($tokens[$tid+4]);
+
+					}else{
+						// $content[$k] = "# REQUIRE impossivel, arquivo nao existe: ".$ifile."\n";
+						if($ENABLE_DEBUG){
+							echo "\t\t[$fname] DEBUG DE FALHA 9\n";
+							echo "\t\t[$fname] REQUIRE file.....: [$ifile]\n";
+							echo "\t\t\t",$tokens[$tid][1],"\n";
+							echo "\t\t\t",$tokens[$tid+1][1],"\n";
+							echo "\t\t\t",$tokens[$tid+2][1],"\n";
+							echo "\t\t\t",$tokens[$tid+3][1],"\n";
+							echo "\t\t\t",$tokens[$tid+4][1],"\n";
+						}
+
+						_abort("REQUIRE impossivel, arquivo nao existe: ".$ifile, 9);
+					}
+
+				// ignorar variavel na require, ignorar
+				}elseif(
+					$tokens[$tid][0] === T_REQUIRE &&
+					$tokens[$tid+1][0] === T_OPEN_PARAM &&
+					$tokens[$tid+2][0] === T_VARIABLE &&
+					$tokens[$tid+3][0] === T_CLOSE_PARAM
+				){
+					if($ENABLE_DEBUG){
+						echo "\t\t[$fname] DEBUG DE NOTA, variavel na REQUIRE\n";
+						echo "\t\t[$fname] REQUIRE file.....: [$ifile]\n";
+						echo "\t\t\t",$tokens[$tid][1],"\n";
+						echo "\t\t\t",$tokens[$tid+1][1],"\n";
+						echo "\t\t\t",$tokens[$tid+2][1],"\n";
+						echo "\t\t\t",$tokens[$tid+3][1],"\n";
+						echo "\t\t\t",$tokens[$tid+4][1],"\n";
+					}
+
+				}elseif( $tokens[$tid][0] === T_REQUIRE ){
+
+					if($ENABLE_DEBUG){
+						echo "\t\t[$fname] DEBUG DE FALHA 10\n";
+						echo "\t\t[$fname] REQUIRE file.....: [$ifile]\n";
+						echo "\t\t\t",$tokens[$tid][1],"\n";
+						echo "\t\t\t",$tokens[$tid+1][1],"\n";
+						echo "\t\t\t",$tokens[$tid+2][1],"\n";
+						echo "\t\t\t",$tokens[$tid+3][1],"\n";
+						echo "\t\t\t",$tokens[$tid+4][1],"\n";
+					}
+
+					_abort("REQUIRE impossivel, referencia com sequencia desconhecida de tokens: ".$ifile, 10);
+
 				}
-
-			}elseif( $tokens[$tid][0] === T_REQUIRE ){
-				_abort("Include impossivel, referencia com sequencia desconhecida de tokens: ".$ifile, 10);
-
-			}
+			} // if IMPLODE_REQUIRE == 1
 		}
 
 		// tokens resumidos
@@ -506,126 +517,219 @@
 		}
 	}
 
-	// Limpar tokens desnecessarios
-	function _php_clean(&$tokens){
-		foreach($tokens as $k=>$token){
-			if(!isset($tokens[$k])) continue;
-			// token atual
-			$act_token = $tokens[$k][TOKEN_CODE]; // codigo do token atual
-			$act_id = $k;
-			// proximo token
-			$nxt_token = 0;
-			$nxt_id = -1;
-			if(isset($tokens[$k+1])){
-				$nxt_token = $tokens[$k+1][TOKEN_CODE];
-				$nxt_id = $k+1;
-			}
-			// proximo proximo token
-			$nxt2_token = 0;
-			$nxt2_id = -1;
-			if(isset($tokens[$k+2])){
-				$nxt2_token = $tokens[$k+2][TOKEN_CODE];
-				$nxt2_id = $k+2;
-			}
-			// primeiro token e' espaco, ciao
-			if($act_token===T_WHITESPACE && $k === 0){ unset($tokens[$k]); continue; }
-			
-			// espaco 1 + espaco 2 = espaco 2
-			if($act_token===T_WHITESPACE && $nxt_token===T_WHITESPACE){ unset($tokens[$k]); continue; }
-
-			// espaco 1 + espaco 2 = espaco 2
-			if($act_token===T_WHITESPACE && $nxt_token===T_WHITESPACE){ unset($tokens[$k]); continue; }
-
-			// ; + espaco = ;
-			if($act_token===T_SEPARATOR && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-			// espaco + ; = ;
-			if($act_token===T_WHITESPACE && $nxt_token===T_SEPARATOR){ unset($tokens[$k]); continue; }
-
-			// espaco 1 + } = }
-			if($act_token===T_WHITESPACE && $nxt_token===T_CLOSE_BLOCK){ unset($tokens[$k]); continue; }
-			// } + espaco = }
-			if($act_token===T_CLOSE_BLOCK && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-
-			// { + espaco = {
-			if($act_token===T_OPEN_BLOCK && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-			//  espaco + { = {
-			if($act_token===T_WHITESPACE && $nxt_token===T_OPEN_BLOCK){ unset($tokens[$k]); continue; }
-
-			// ( + espaco = (
-			if($act_token===T_OPEN_PARAM && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-			// ) + espaco = )
-			if($act_token===T_CLOSE_PARAM && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-
-			// espaco 1 + INLINE_HTML = INLINE_HTML
-			if($act_token===T_WHITESPACE && $nxt_token===T_INLINE_HTML){ unset($tokens[$k]); continue; }
-			// INLINE_HTML + espaco = INLINE_HTML
-			if($act_token===T_INLINE_HTML && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-
-			// echo + espaco + "string" = echo + "string"
-			if($act_token===T_ECHO && $nxt_token===T_WHITESPACE && $nxt2_token===T_CONSTANT_ENCAPSED_STRING){ unset($tokens[$k+1]); continue; }
-
-			// espaco + T_CONSTANT_ENCAPSED_STRING = T_CONSTANT_ENCAPSED_STRING
-			if($act_token===T_WHITESPACE && $nxt_token===T_CONSTANT_ENCAPSED_STRING){ unset($tokens[$k]); continue; }
-			// T_CONSTANT_ENCAPSED_STRING + espaco = T_CONSTANT_ENCAPSED_STRING
-			if($act_token===T_CONSTANT_ENCAPSED_STRING && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-
-			// espaco + T_VIRG = T_VIRG
-			if($act_token===T_WHITESPACE && $nxt_token===T_VIRG){ unset($tokens[$k]); continue; }
-			// T_VIRG + espaco = T_VIRG
-			if($act_token===T_VIRG && $nxt_token===T_WHITESPACE){ unset($tokens[$k+1]); continue; }
-
-		}
+	// transformar tokens em codigo-fonte
+	function _php_tokens2source(&$tokens){
+		// converter novo array em codigo novamente
+		$tsrc = array(); $c = 0;
+		foreach($tokens as $k=>$v) $tsrc[$c++] = $v[TOKEN_CONTENT];
+		return implode('', $tsrc);
 	}
 
-	// converter HTML em tokens PHP
-	function _php_convert_html(&$tokens){
-
-		$c = 0;
-		foreach($tokens as $k=>$token){
-			if(!isset($tokens[$k])) continue;
-			$c++;
-			$act_token = $tokens[$k][TOKEN_CODE]; // codigo do token atual
-			$act_id = $k;
-
-			// ignorar token nao-HTML
-			if($act_token!=T_INLINE_HTML) continue;
-
-			// proximo token
-			$nxt_token = 0;
-			$nxt_id = -1;
-			if(isset($tokens[$k+1])){
-				$nxt_id = $k+1;
-				$nxt_token = $tokens[$nxt_id][TOKEN_CODE];
-			}
-
-			// primeiro token HTML pode ser na verdade
-			// o comando do interpretador, #!/....
-			if($c===1){
-				$xstr = trim($tokens[$act_id][TOKEN_CONTENT]);
-				if(substr($xstr, 0, 3) == '#!/'){
-					// token do interpretador, ignorar conversao
-					continue;
-				}
-			}
-
-
-			// pode acontecer de a limpeza retirar espacos entre dois
-			// tokens HTML, converter tokens HTML seguidos em um unico
-			// token concatenado
-			if($act_token===T_INLINE_HTML && $nxt_token===T_INLINE_HTML){
-				// concatenar tokens
-				$tokens[$act_id][TOKEN_CONTENT] = $tokens[$act_id][TOKEN_CONTENT] . $tokens[$nxt_id][TOKEN_CONTENT];
-				// remover proximo token
-				unset($tokens[$nxt_id]);
-				$nxt_id = -1;
-			}
-
-			// transformar token HTML em token especial concatenado
-			$tokens[$act_id][TOKEN_CODE] = T_HTML_TO_PHP;
-			$tokens[$act_id][TOKEN_NAME] = 'T_HTML_TO_PHP';
-			$tokens[$act_id][TOKEN_CONTENT] = "echo base64_decode('".base64_encode($tokens[$act_id][TOKEN_CONTENT])."');";
-		}
+// Funcoes
+	function _abort($error, $errno=1){
+		global $INPUT_SCRIPT ;
+		echo "\n";
+		echo "PHP-IMPLODE [", $INPUT_SCRIPT, "] ERROR: ", $error, "\n";
+		echo "\n";
+		exit($errno);
 	}
+
+	function _help(){
+		echo "\n";
+		echo "Use: php-implode -f (php-script) -w (output-script) [-r relative-chroot] [options]\n";
+		echo "Options:\n";
+		echo "\t-c        Limpar codigo\n";
+		echo "\t-d        Ativar debug\n";
+		echo "\t-x        Transformar partes HTML em tokens PHP\n";
+		echo "\t-M        Nao resumir require()\n";
+		echo "\t-B        Inserir quebra de linhas em separadores\n";
+		echo "\t-C        Desativar cache\n";
+		echo "\t-T        Especificar diretorio de cache\n";
+		echo "\n";
+		exit(0);
+	}
+
+	// retirar /./, ./., //
+	function _clspath($str){
+		for($i=0; $i < 10; $i++){
+			$str = str_replace('//', '/', $str);
+			$str = str_replace('/./', '/', $str);
+		}
+		return $str;
+	}
+
+
+// Remover $root do inicio para considerar caminho 100% relativo
+	function _no_root($in_phpfile){
+		global $root;
+		global $ENABLE_DEBUG;
+		$phpfile = $in_phpfile;
+		$rlen = strlen($root);
+
+		if($root != '/' && substr($phpfile, 0, $rlen) == $root) $phpfile = substr($phpfile, $rlen);
+		$phpfile = str_replace('//', '/', $phpfile);
+
+		if($ENABLE_DEBUG){
+			echo "\n";
+			echo "_no_root($phpfile)\n";
+			echo "       PHP-input-file......: [$in_phpfile]\n";
+			echo "           compsubstr......: [".substr($in_phpfile, 0, strlen($root))."]\n";
+			echo "                 rlen......: [".$rlen."]\n";
+			echo "       out-PHP-file........: [$phpfile]\n";
+			echo "\n";
+		}
+		return $phpfile;
+	}
+// Adicionar root para obter caminho completo para acessar o arquivo
+	function _full_file($in_phpfile){
+		global $root;
+		global $ENABLE_DEBUG;
+		$phpfile = $in_phpfile;
+		if($root=='/') return $phpfile;
+		$phpfile = $root . _no_root($phpfile);
+		if($ENABLE_DEBUG) echo "_full_file($in_phpfile) root[$root] out[$phpfile]\n";
+		return $phpfile;
+	}
+
+// ************************************************************************************************************
+
+// Variaveis GLOBAIS
+	// Script de entrada
+	$INPUT_SCRIPT = '';
+
+	// Arquivo para gravar script de saida
+	$startpwd = getcwd();
+	$OUTPUT_SCRIPT = '';
+
+	// Root relativo (procurar dentro de uma pasta em vez de ir no /)
+	$root = '/';
+
+	// Flags
+	// - remover comentarios?
+	$PHPSTRIPCLEAN = 0;
+
+	// Converter HTML em tokens PHP
+	$PHPIZE_HTML = 0;
+
+	// Nao implodir inclusoes via require()
+	$IMPLODE_REQUIRE = 1;
+
+	// Inserir quebra de linha em todos os separadores ';' para
+	// ajudar na depuracao
+	$INSERT_BREAK = 0;
+
+	// Cache
+	// o cache de tokens do script
+	$CACHE_ENABLE = 1;
+	$CACHEDIR = '/ram/tmp';
+	$CACHEPREFIX = 'phpi-cache-' . $PHPI_VERSION;
+
+	$ENABLE_DEBUG = 0;
+
+	// processar argumento
+	if(isset($argv[0])) unset($argv[0]); // remover argumento zero
+	foreach($argv as $k=>$arg){
+		if(!isset($argv[$k])) continue;
+
+		if($arg=='-h' || $arg == '-help' || $arg == '--help') _help();
+
+		$next = isset($argv[$k+1]) ? $argv[$k+1] : '';
+
+		// ativar debug
+		if($arg=='-d'||$arg=='-debug'||$arg=='--debug'){
+			$ENABLE_DEBUG++;
+			unset($argv[$k]);
+			continue;
+		}
+
+		// Arquivo de entrada
+		if( ($arg=='-f' || $arg=='-input' || $arg=='--input' || $arg=='-file' || $arg=='--file') && $next != ''){
+			$INPUT_SCRIPT = $next;
+			unset($argv[$k]); unset($argv[$k+1]);
+			continue;
+		}
+
+		// HTML para php
+		if($arg=='-x' || $arg=='-phpize' || $arg=='--phpize'){
+			$PHPIZE_HTML++;
+			unset($argv[$k]);
+			continue;
+		}
+
+		// Inserir quebra em separadores
+		if($arg=='-B' || $arg=='-break' || $arg=='--break'){
+			$INSERT_BREAK++;
+			unset($argv[$k]);
+			continue;
+		}
+
+		// Desativar cache
+		if($arg=='-C' || $arg=='-no-cache' || $arg=='-nocache' || $arg=='--nocache' || $arg=='--no-cache'){
+			$CACHE_ENABLE=0;
+			unset($argv[$k]);
+			continue;
+		}
+
+		// Diretorio de cache
+		if( ($arg=='-T' || $arg=='-cachedir' || $arg=='--cachedir') && $next != ''){
+			$CACHEDIR = $next;
+			unset($argv[$k]); unset($argv[$k+1]);
+			continue;
+		}
+
+		// Arquivo de saida
+		if( ($arg=='-w' || $arg=='-output' || $arg=='--output') && $next != ''){
+			$OUTPUT_SCRIPT = $next;
+			unset($argv[$k]); unset($argv[$k+1]);
+			continue;
+		}
+
+		// Nao implodir require()
+		if( $arg=='-M' || $arg=='-no-require' || $arg=='--no-require'){
+			$IMPLODE_REQUIRE = 0;
+			unset($argv[$k]);
+			continue;
+		}
+
+		// Root relativo
+		if( ($arg=='-r' || $arg=='-root' || $arg=='--root' ) && $next != ''){
+			$root = $next;
+			unset($argv[$k]); unset($argv[$k+1]);
+			continue;
+		}
+
+		// Flags
+		if($arg == '-c' || $arg == '-clean' || $arg == '-clear' || $arg == '--clean' || $arg == '--clear'){
+			$PHPSTRIPCLEAN++;
+			continue;
+		}
+
+		// Argumento desconhecido:
+		// 1 - se for arquivo existente, e' nosso script
+		if($INPUT_SCRIPT =='' && is_file($arg)){ $INPUT_SCRIPT = $arg; continue; }
+		if($OUTPUT_SCRIPT==''){ $OUTPUT_SCRIPT = $arg; continue; }
+	}
+	if($root=='') $root = '/';
+
+	$INPUT_SCRIPT = _clspath($INPUT_SCRIPT);
+	$OUTPUT_SCRIPT = _clspath($OUTPUT_SCRIPT);
+
+// Debug
+	if($ENABLE_DEBUG){
+		echo "START PWD........: [$startpwd]\n";
+		echo "SCRIPT...........: [$INPUT_SCRIPT]\n";
+		echo "OUT FILE.........: [$OUTPUT_SCRIPT]\n";
+		echo "CLEAN............: [$PHPSTRIPCLEAN]\n";
+		echo "PHPIZE HTML......: [$PHPIZE_HTML]\n";
+		echo "IMPLODE_REQUIRE..: [$IMPLODE_REQUIRE]\n";
+		echo "ROOT.........: [$root]\n";
+		// exit();
+	}
+
+// Criticas
+	if($INPUT_SCRIPT==''){ _abort("Arquivo [$INPUT_SCRIPT] nao informado.", 10); }
+	if(!file_exists($INPUT_SCRIPT)){ _abort("Arquivo [$INPUT_SCRIPT] nao encontrado.", 11); }
+
 
 // Considerar todas as referencias dentro da jaula $root
 // vamos remover a referencia do chroot do script de entrada
@@ -633,31 +737,42 @@
 // --
 // Obter arquivo implodido
 	$rscript = _no_root($INPUT_SCRIPT);
-	if($debug){
+	if($ENABLE_DEBUG){
 		echo "\n";
 		echo "Script: [$INPUT_SCRIPT] R-Script: [$rscript]\n";
 		echo "\n";
 		// exit();
 	}
 
-	// obter todos os tokens implodidos
+	// obter todos os tokens implodidos do arquivo principal
+		/*
+		$alltokens = php_tokenizer_file($rscript);
+		if($ENABLE_DEBUG){
+			echo "TOKENS DO ARQUIVO DE ENTRADA:\n";
+			echo "-------------------------------------------------\n";
+			print_r($alltokens);
+			echo "\n";
+			echo "-------------------------------------------------\n";
+			echo _php_tokens2source($alltokens);
+			echo "\n";
+			echo "-------------------------------------------------\n";
+			exit();
+		}
+		*/
+	// obter tokens do arquivo e seguir requires recursivamente
 	$alltokens = _php_implode($rscript, '');
 
 	// transformar tokens com filhos em lista planificada
 	// - retorna em $newtokenlist
 	_php_resume_inline_tokens($alltokens);
 
-	// remover whitespaces desnecessarios
-	if($PHPCLEAN){
-		_php_clean($newtokenlist);
-	}
-
 	// converter tokens HTML em PHP
-	if($PHPIZE_HTML){
-		_php_convert_html($newtokenlist);
-	}
+	if($PHPIZE_HTML) _php_convert_html($newtokenlist);
 
-	// print_r($newtokenlist);
+	// remover whitespaces desnecessarios
+	if($PHPSTRIPCLEAN) _php_clean($newtokenlist);
+
+	if($ENABLE_DEBUG > 1){ echo "TOKENS POS CONVERSAO HTML->PHP\n"; print_r($newtokenlist); }
 	// exit();
 
 	// liberar memoria
@@ -672,7 +787,7 @@
 
 	// num codigo 100% php, o primeiro token e' abertura para PHP
 
-
+	// Adicionar open/close tab
 	foreach($newtokenlist as $k => $token){
 		if($token[TOKEN_CODE]===T_INLINE_HTML){
 			// string html
@@ -712,10 +827,30 @@
 	}
 	// nao importa o modo como terminou, nao precisa fechar tag PHP
 
+	// Inserir quebra de linha
+	if($INSERT_BREAK)
+		foreach($final_tokens as $k=>$token){
+			switch($token[TOKEN_CODE]){
+				case T_OPEN_TAG:
+				case T_HTML_TO_PHP:
+				case T_SEPARATOR:
+				case T_OPEN_BLOCK:
+				case T_CLOSE_BLOCK:
+				case T_CLOSE_BLOCK:
+					$final_tokens[$k][TOKEN_CONTENT] .= "\n";
+					break;
+			}
+		}
+	//-
+
+	if($ENABLE_DEBUG > 1){
+		echo "TOKENS FINAIS 1\n";
+		print_r($final_tokens);
+	}
+
 	// converter novo array em codigo novamente
 	foreach($final_tokens as $k=>$v) $final_tokens[$k] = $v[TOKEN_CONTENT];
 	$newscript = implode('', $final_tokens);
-
 
 // Trocar constantes de compilacao
 	$consts = array(
@@ -730,7 +865,7 @@
 	);
 	foreach($consts as $cname=>$cvalue) $newscript = str_replace($cname, $cvalue, $newscript);
 
-	if($debug > 1){
+	if($ENABLE_DEBUG > 1){
 		echo "OUT SCRIPT.: [$OUTPUT_SCRIPT]\n";
 		echo "-------------------------------------------------------------\n";
 		echo $newscript,"\n";
