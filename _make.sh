@@ -67,7 +67,6 @@
 	_install php-serialize-print.php		/usr/bin/php-serialize-print
 	_install php-implode.php				/usr/bin/php-implode
 	_install php-obfusc.php					/usr/bin/php-obfusc
-	_install php-xcode.php					/usr/bin/php-xcode
 
 # Compilar shell-script na pasta de destino
 	shell_compiler "$TMPDST"
