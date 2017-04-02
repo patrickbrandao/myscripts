@@ -46,6 +46,7 @@
 	_install getsha256sum.sh				/usr/bin/getsha256sum
 	_install duptester.sh					/usr/bin/duptester
 	_install http-sync.sh					/usr/bin/http-sync
+	_install http-rsync.sh					/usr/bin/http-rsync
 	_install ziplist.sh						/usr/bin/ziplist
 	_install killscript.sh					/usr/bin/killscript
 	_install portclose.sh					/usr/sbin/portclose
@@ -53,14 +54,20 @@
 
 	_install sh-implode.php					/usr/bin/sh-implode
 	_install sh-to-base64run.sh 			/usr/bin/sh-to-base64run
-	_install php-serialize-print.php		/usr/bin/php-serialize-print
-	_install php-implode.php				/usr/bin/php-implode
 	_install dupfiles.php					/usr/bin/dupfiles
 
 	_install charset-find.sh				/usr/bin/charset-find
 
 	_install ipconfig.sh					/usr/sbin/ipconfig
 
+	_install file-cleaner-css.php			/usr/bin/file-cleaner-css
+	_install file-cleaner-js.php			/usr/bin/file-cleaner-js
+	_install file-cleaner-std.php			/usr/bin/file-cleaner-std
+
+	_install php-serialize-print.php		/usr/bin/php-serialize-print
+	_install php-implode.php				/usr/bin/php-implode
+	_install php-obfusc.php					/usr/bin/php-obfusc
+	_install php-xcode.php					/usr/bin/php-xcode
 
 # Compilar shell-script na pasta de destino
 	shell_compiler "$TMPDST"

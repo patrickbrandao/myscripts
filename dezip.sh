@@ -48,6 +48,11 @@ export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
 			_dezip_deziper="tar -xvf $_dezip_file"
 			;;
 
+		'lz')
+			_dezip_filecounter="tar -vtf $_dezip_file | wc -l"
+			_dezip_deziper="tar -xvf $_dezip_file"
+			;;
+
 		'zip')
 			_dezip_filecounter="unzip -l $_dezip_file | egrep '.*[0-9]{2}-[0-9]{2}-[0-9]{4}' | wc -l"
 			_dezip_deziper="unzip -o $_dezip_file"

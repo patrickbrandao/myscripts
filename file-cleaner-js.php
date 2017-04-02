@@ -35,7 +35,6 @@
 		echo " -f (file)    Arquivo de entrada\n";
 		echo " -w (file)    Arquivo de saida\n";
 		echo " -i           Grava resultado no mesmo arquivo de entrada (sem -w)\n";
-		echo " -w           Arquivo de saida\n";
 		echo " -B           Adicionar quebra de linha ao final do arquivo";
 		echo "\n";
 		exit(0);
