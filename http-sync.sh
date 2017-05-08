@@ -253,7 +253,7 @@ export PATH="/usr/bin:/bin:/sbin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
 	}
 	# prograss-bar resumido - filtrar saida do wget
 	_progressfilt(){
-		grep --line-buffered "%" | sed -u -e "s,\.,,g" | awk '{printf("\b\b\b\b%4s", $2)}'
+		grep --line-buffered "%" | sed -u -e "s#\.##g;s#,##g" | awk '{printf("\b\b\b\b%4s", $2)}'
 		return
 		local flag=false c count cr=$'\r' nl=$'\n'
 		while IFS='' read -d '' -rn 1 c
